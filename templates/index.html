@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>CCTMS Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; background:#f5f7fa; margin:0; padding:20px; }
+    h1 { text-align:center; color:#333; }
+    .card { background:white; border-radius:12px; padding:20px; margin:20px auto; max-width:800px; box-shadow:0 4px 6px rgba(0,0,0,0.1); }
+    button { padding:6px 12px; border:none; border-radius:6px; background:#2196f3; color:white; cursor:pointer; margin-left:6px; }
+    button:hover { background:#1976d2; }
+    ul { list-style:none; padding:0; }
+    li { background:#fafafa; margin:6px 0; padding:8px; border-radius:6px; display:flex; justify-content:space-between; align-items:center; }
+    .charts { display:flex; flex-wrap:wrap; gap:15px; justify-content:center; }
+    .chart-box { max-width:220px; height:150px; }
+    canvas { width:100% !important; height:100% !important; }
+    .chatbox { margin-top:20px; padding:15px; background:#fff; border-radius:12px; box-shadow:0 4px 6px rgba(0,0,0,0.1); }
+    .chat-messages { max-height:180px; overflow-y:auto; border:1px solid #ddd; padding:10px; margin-bottom:10px; }
+    .user { color:#1976d2; font-weight:bold; }
+    .bot { color:#388e3c; font-weight:bold; }
+    input[type="text"], input[type="number"] { padding:6px 10px; border-radius:6px; border:1px solid #ccc; width: calc(100% - 22px); margin-bottom:8px; }
+
+    /* Tabs */
+    .tabs { display:flex; gap:10px; margin-bottom:15px; }
+    .tab { padding:8px 14px; border-radius:6px; cursor:pointer; background:#e0e0e0; }
+    .tab.active { background:#2196f3; color:white; }
+    .tab-content { display:none; }
+    .tab-content.active { display:block; }
+    form.add-suggestion { display:inline; margin:0; }
+  </style>
+</head>
+<body>
+  <h1>CCTMS Dashboard</h1>
+
+  <!-- Total Carbon Card -->
+  <div class="card">
+    <h3>Total Carbon Emissions: {{ total }} / {{ budget }} kg</h3>
+    <progress value="{{ total }}" max="{{ budget }}" style="width:100%; height:18px;"></progress>
+
+    <form action="/add" method="post" style="margin-top:15px;">
+      <input type="text" name="name" placeholder="Enter task" required>
+      <input type="number" step="0.1" name="carbon" placeholder="Custom CO₂ (optional)">
+      <button type="submit">Add Task</button>
+    </form>
+  </div>
+
+  <!-- Tasks Card -->
+  <div class="card">
+    <h3>Tasks</h3>
+    <ul>
+      {% for t in tasks %}
+        <li>
+          <span>{{ t.name }} - {{ t.carbon }} kg ({{ t.category }}) 💡 {{ t.suggestion }}</span>
+          <span>
+            {% if not t.completed %}
+              <a href="{{ url_for('mark_done', task_id=t.id) }}">✅ Done</a>
+            {% endif %}
+            <a href="{{ url_for('delete_task', task_id=t.id) }}">❌ Delete</a>
+          </span>
+        </li>
+      {% endfor %}
+    </ul>
+    <a href="{{ url_for('clear_tasks') }}">Clear All Tasks</a>
+  </div>
+
+  <!-- Suggestions Card -->
+  <div class="card">
+    <h3>Suggestions to Increase Carbon Points 🌱</h3>
+    <ul>
+      {% for s in suggestions %}
+        <li>
+          <span>{{ s }}</span>
+          <form class="add-suggestion" action="/add" method="post">
+            <input type="hidden" name="name" value="{{ s }}">
+            <button type="submit">➕ Add Task</button>
+          </form>
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <!-- Analytics Card -->
+  <div class="card">
+    <h3>Analytics</h3>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <div class="tab active" data-tab="categories">Categories</div>
+      <div class="tab" data-tab="daily">Daily Emissions</div>
+      <div class="tab" data-tab="weekly">Weekly Emissions</div>
+    </div>
+
+    <!-- Tab Content -->
+    <div class="tab-content active" id="categories">
+      <div class="charts">
+        <div class="chart-box"><canvas id="pieChart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="daily">
+      <div class="charts">
+        <div class="chart-box"><canvas id="dailyChart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="weekly">
+      <div class="charts">
+        <div class="chart-box"><canvas id="weeklyChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI Chatbox -->
+  <div class="card chatbox">
+    <h3>AI Chatbox</h3>
+    <div class="chat-messages" id="chatMessages"></div>
+    <form id="chatForm">
+      <input type="text" id="chatInput" placeholder="Ask AI about eco-tasks..." required>
+      <button type="submit">Send</button>
+    </form>
+  </div>
+
+  <script>
+    // Charts Data
+    const categories = {{ categories|tojson }};
+    const dailyData = {{ daily|tojson }};
+    const weeklyData = {{ weekly|tojson }};
+
+    new Chart(document.getElementById('pieChart'), {
+      type: 'pie',
+      data: {
+        labels: Object.keys(categories),
+        datasets: [{ data: Object.values(categories), backgroundColor: ['#f44336','#4caf50','#2196f3','#ff9800'] }]
+      },
+      options: { plugins: { legend: { display:true, position:'bottom' } } }
+    });
+
+    new Chart(document.getElementById('dailyChart'), {
+      type: 'line',
+      data: {
+        labels: Object.keys(dailyData),
+        datasets: [{ label: 'Daily CO₂', data: Object.values(dailyData), borderColor: '#2196f3', fill:false, tension:0.3 }]
+      },
+      options: { plugins: { legend: { display:false } } }
+    });
+
+    new Chart(document.getElementById('weeklyChart'), {
+      type: 'bar',
+      data: {
+        labels: Object.keys(weeklyData),
+        datasets: [{ label: 'Weekly CO₂', data: Object.values(weeklyData), backgroundColor: '#4caf50' }]
+      },
+      options: { plugins: { legend: { display:false } } }
+    });
+
+    // Tabs
+    const tabs = document.querySelectorAll(".tab");
+    const contents = document.querySelectorAll(".tab-content");
+    tabs.forEach(tab => {
+      tab.addEventListener("click", () => {
+        tabs.forEach(t => t.classList.remove("active"));
+        tab.classList.add("active");
+        contents.forEach(c => c.classList.remove("active"));
+        document.getElementById(tab.dataset.tab).classList.add("active");
+      });
+    });
+
+    // Chatbox
+    const chatForm = document.getElementById("chatForm");
+    const chatMessages = document.getElementById("chatMessages");
+    chatForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const input = document.getElementById("chatInput");
+      const userMsg = input.value;
+      chatMessages.innerHTML += `<p><span class="user">You:</span> ${userMsg}</p>`;
+      input.value = "";
+      const res = await fetch("/chat", { method:"POST", headers:{ "Content-Type":"application/x-www-form-urlencoded" }, body:"message="+encodeURIComponent(userMsg) });
+      const data = await res.json();
+      chatMessages.innerHTML += `<p><span class="bot">Bot:</span> ${data.reply}</p>`;
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    });
+  </script>
+</body>
+</html>
