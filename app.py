@@ -2,7 +2,6 @@ from flask import Flask, render_template, request, redirect, url_for, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 import random
-import json
 
 app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///cctms.db"
@@ -21,11 +20,10 @@ class Task(db.Model):
     completed = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-
 # ----------------------------
 # Helper Functions
 # ----------------------------
-def generate_suggestion(category):
+def generate_suggestion(category: str) -> str:
     tips = {
         "travel": ["Try carpooling 🚗", "Use public transport 🚌", "Walk or cycle 🚴"],
         "food": ["Choose plant-based meals 🥦", "Avoid food waste ♻️", "Buy local produce 🥕"],
@@ -34,33 +32,30 @@ def generate_suggestion(category):
     }
     return random.choice(tips.get(category, ["Think sustainable! 🌿"]))
 
-
 def calculate_daily():
-    data = {}
     today = datetime.utcnow().date()
-    for i in range(7):  # last 7 days
+    data = {}
+    for i in range(7):
         day = today - timedelta(days=i)
         total = db.session.query(db.func.sum(Task.carbon))\
             .filter(Task.created_at >= datetime.combine(day, datetime.min.time()))\
             .filter(Task.created_at <= datetime.combine(day, datetime.max.time()))\
             .scalar() or 0
-        data[day.strftime("%a")] = total
+        data[day.strftime("%a")] = round(total, 2)
     return dict(reversed(data.items()))
 
-
 def calculate_weekly():
-    data = {}
     today = datetime.utcnow().date()
-    for i in range(4):  # last 4 weeks
+    data = {}
+    for i in range(4):
         start = today - timedelta(days=today.weekday() + i * 7)
         end = start + timedelta(days=6)
         total = db.session.query(db.func.sum(Task.carbon))\
             .filter(Task.created_at >= datetime.combine(start, datetime.min.time()))\
             .filter(Task.created_at <= datetime.combine(end, datetime.max.time()))\
             .scalar() or 0
-        data[f"Week-{i+1}"] = total
+        data[f"Week-{i+1}"] = round(total, 2)
     return dict(reversed(data.items()))
-
 
 def calculate_categories():
     categories = ["travel", "food", "office", "other"]
@@ -68,9 +63,8 @@ def calculate_categories():
     for c in categories:
         total = db.session.query(db.func.sum(Task.carbon))\
             .filter(Task.category == c).scalar() or 0
-        data[c.capitalize()] = total
+        data[c.capitalize()] = round(total, 2)
     return data
-
 
 # ----------------------------
 # Routes
@@ -87,13 +81,8 @@ def index():
         query = query.filter(Task.name.ilike(f"%{search_query}%"))
 
     tasks = query.order_by(Task.created_at.desc()).all()
-
-    total = sum(t.carbon for t in tasks)
-    budget = 100  # demo budget
-
-    daily = calculate_daily()
-    weekly = calculate_weekly()
-    categories = calculate_categories()
+    total = round(sum(t.carbon for t in tasks), 2)
+    budget = 100.00  # example budget
 
     return render_template(
         "index.html",
@@ -102,23 +91,19 @@ def index():
         budget=budget,
         filter_category=filter_category,
         search_query=search_query,
-        daily=daily,
-        weekly=weekly,
-        categories=categories,
-        daily_json=json.dumps(daily),
-        weekly_json=json.dumps(weekly),
-        categories_json=json.dumps(categories)
+        daily=calculate_daily(),
+        weekly=calculate_weekly(),
+        categories=calculate_categories()
     )
-
 
 @app.route("/add", methods=["POST"])
 def add_task():
-    name = request.form["name"]
+    name = request.form.get("name")
     category = request.form.get("category", "other")
     carbon = request.form.get("carbon")
 
     try:
-        carbon_value = float(carbon) if carbon else random.uniform(1, 5)
+        carbon_value = float(carbon) if carbon else round(random.uniform(1,5), 2)
     except ValueError:
         carbon_value = 0.0
 
@@ -128,14 +113,12 @@ def add_task():
     db.session.commit()
     return redirect(url_for("index"))
 
-
 @app.route("/delete/<int:task_id>")
 def delete_task(task_id):
     task = Task.query.get_or_404(task_id)
     db.session.delete(task)
     db.session.commit()
     return redirect(url_for("index"))
-
 
 @app.route("/done/<int:task_id>")
 def mark_done(task_id):
@@ -144,13 +127,11 @@ def mark_done(task_id):
     db.session.commit()
     return redirect(url_for("index"))
 
-
 @app.route("/clear")
 def clear_tasks():
     Task.query.delete()
     db.session.commit()
     return redirect(url_for("index"))
-
 
 @app.route("/chat", methods=["POST"])
 def chat():
@@ -169,15 +150,13 @@ def chat():
 
     return jsonify({"reply": reply})
 
-
 # ----------------------------
-# Init DB
+# Initialize DB
 # ----------------------------
 @app.cli.command("init-db")
 def init_db():
     db.create_all()
     print("✅ Database initialized")
-
 
 if __name__ == "__main__":
     with app.app_context():
